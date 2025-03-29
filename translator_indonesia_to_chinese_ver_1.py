@@ -7,111 +7,28 @@ Original file is located at
     https://colab.research.google.com/drive/1AjGsef1ecETtOoLZLEIpPc6zRjwWC5oA
 """
 
-!pip install python-docx
-
-!pip install sacremoses
-
-# Trial 3: Just edit the inputted doc. Then translate it using trial 2. Result: As expected, but there are 2 missing images
-
-from docx import Document
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-import torch
-from google.colab import files
-import re
-
-# Upload Word document in Google Colab
-uploaded = files.upload()
-input_docx = list(uploaded.keys())[0]  # Get the uploaded filename
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Load translation models
-model_id_en = "Helsinki-NLP/opus-mt-id-en"
-model_en = AutoModelForSeq2SeqLM.from_pretrained(model_id_en).to(device)
-tokenizer_en = AutoTokenizer.from_pretrained(model_id_en)
-
-model_id_zh = "Helsinki-NLP/opus-mt-en-zh"
-model_zh = AutoModelForSeq2SeqLM.from_pretrained(model_id_zh).to(device)
-tokenizer_zh = AutoTokenizer.from_pretrained(model_id_zh)
-
-# Function to remove non-standard characters
-def remove_non_standard_chars(text):
-    text = re.sub(r'', '', text)  # Remove the "" character
-    text = re.sub(r':', 'termasuk', text)  # Replace ":" with "termasuk"
-    return text
-
-# Function to preprocess Indonesian text
-def preprocess_text(text):
-    return remove_non_standard_chars(text)
-
-# Function to translate text from Indonesian to Chinese via English
-def translate_text(text):
-    if not text.strip():
-        return ""
-
-    input_tokens_en = tokenizer_en(text, return_tensors="pt", padding=True, truncation=True).to(device)
-    translated_tokens_en = model_en.generate(**input_tokens_en)
-    sentence_en = tokenizer_en.decode(translated_tokens_en[0], skip_special_tokens=True)
-
-    input_tokens_zh = tokenizer_zh(sentence_en, return_tensors="pt", padding=True, truncation=True).to(device)
-    translated_tokens_zh = model_zh.generate(**input_tokens_zh)
-    sentence_zh = tokenizer_zh.decode(translated_tokens_zh[0], skip_special_tokens=True)
-
-    return re.sub(r'\s+', ' ', sentence_zh).strip()
-
-# Function to process the document
-def replace_text_in_docx(docx_path, output_path):
-    doc = Document(docx_path)
-
-    for para in doc.paragraphs:
-        if para.text.strip():
-            processed_text = preprocess_text(para.text)
-            translated_text = translate_text(processed_text)
-            para.text = translated_text  # Replace Indonesian with Chinese
-
-    doc.save(output_path)
-
-# Set output filename
-output_docx_translated = "Translated_Chinese.docx"
-
-# Process and save the document
-print("Replacing text in the document...")
-replace_text_in_docx(input_docx, output_docx_translated)
-
-print("✅ Translation complete! Download your file below:")
-files.download(output_docx_translated)
-
-pip install gradio
-
 import gradio as gr
 from docx import Document
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 import torch
 import re
-import os
 
-# Load translation models
+# Load models
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
 model_id_en = "Helsinki-NLP/opus-mt-id-en"
 model_en = AutoModelForSeq2SeqLM.from_pretrained(model_id_en).to(device)
 tokenizer_en = AutoTokenizer.from_pretrained(model_id_en)
-
 model_id_zh = "Helsinki-NLP/opus-mt-en-zh"
 model_zh = AutoModelForSeq2SeqLM.from_pretrained(model_id_zh).to(device)
 tokenizer_zh = AutoTokenizer.from_pretrained(model_id_zh)
 
-# Function to remove non-standard characters
-def remove_non_standard_chars(text):
-    text = re.sub(r'', '', text)  # Remove the "" character
-    text = re.sub(r':', 'termasuk', text)  # Replace ":" with "termasuk"
+# Preprocessing function
+def preprocess_text(text):
+    text = re.sub(r'', '', text)
+    text = re.sub(r':', 'termasuk', text)
     return text
 
-# Function to preprocess Indonesian text
-def preprocess_text(text):
-    return remove_non_standard_chars(text)
-
-# Function to translate text from Indonesian to Chinese via English
+# Translation function
 def translate_text(text):
     if not text.strip():
         return ""
@@ -126,32 +43,19 @@ def translate_text(text):
 
     return re.sub(r'\s+', ' ', sentence_zh).strip()
 
-# Function to process the document
-def translate_document(docx_path):
-    doc = Document(docx_path)
-    output_path = "Translated_Chinese.docx"
-
+# Document translation function
+def translate_docx(file):
+    doc = Document(file.name)
     for para in doc.paragraphs:
         if para.text.strip():
             processed_text = preprocess_text(para.text)
             translated_text = translate_text(processed_text)
             para.text = translated_text  # Replace Indonesian with Chinese
 
+    output_path = "Translated_Chinese.docx"
     doc.save(output_path)
     return output_path
 
-# Define the Gradio interface
-def gradio_interface(file):
-    output_file = translate_document(file.name)
-    return output_file
-
-iface = gr.Interface(
-    fn=gradio_interface,
-    inputs=gr.File(label="Upload a DOCX file"),
-    outputs=gr.File(label="Download Translated DOCX"),
-    title="Indonesian to Chinese Document Translator",
-    description="Upload a Word document in Indonesian, and get a translated Chinese version while preserving formatting."
-)
-
-# Launch the Gradio web app
-iface.launch()
+# Create Gradio interface
+iface = gr.Interface(fn=translate_docx, inputs=gr.File(), outputs=gr.File(label="Download Translated DOCX"))
+iface.launch(share=True)  # share=True allows public access
